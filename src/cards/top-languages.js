@@ -165,8 +165,13 @@ const calculatePixelLayoutHeight = (totalLangs, gridRows) => {
   const pixelSize = 16;
   const gap = 3;
   const gridHeight = gridRows * (pixelSize + gap) - gap;
-  const legendHeight = Math.round(totalLangs / 2) * 25;
-  return gridHeight + legendHeight + 85;
+  const gridToLegendGap = 20;
+  const legendHeight = Math.ceil(totalLangs / 2) * 25;
+  const bodyOffset = 55; // Card title (35) + body gap (20)
+  const bottomPadding = 10;
+  return (
+    bodyOffset + gridHeight + gridToLegendGap + legendHeight + bottomPadding
+  );
 };
 
 /**
