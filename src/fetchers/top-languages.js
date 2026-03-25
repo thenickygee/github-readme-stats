@@ -21,7 +21,7 @@ const fetcher = (variables, token) => {
       query userInfo($login: String!) {
         user(login: $login) {
           # fetch only owner repos & not forks
-          repositories(ownerAffiliations: OWNER, isFork: false, first: 100, visibility: [PUBLIC, PRIVATE, INTERNAL]) {
+          repositories(ownerAffiliations: OWNER, isFork: false, first: 100) {
             nodes {
               name
               languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
@@ -39,6 +39,44 @@ const fetcher = (variables, token) => {
       }
       `,
       variables,
+    },
+    {
+      Authorization: `token ${token}`,
+    },
+  );
+};
+
+/**
+ * Viewer fetcher that uses the authenticated user context to include private repos.
+ *
+ * @param {any} variables Fetcher variables (unused but required by retryer).
+ * @param {string} token GitHub token.
+ * @returns {Promise<import("axios").AxiosResponse>} Languages fetcher response.
+ */
+const viewerFetcher = (variables, token) => {
+  return request(
+    {
+      query: `
+      query viewerInfo {
+        viewer {
+          login
+          repositories(ownerAffiliations: OWNER, isFork: false, first: 100) {
+            nodes {
+              name
+              languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
+                edges {
+                  size
+                  node {
+                    color
+                    name
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      `,
     },
     {
       Authorization: `token ${token}`,
@@ -69,7 +107,26 @@ const fetchTopLanguages = async (
     throw new MissingParamError(["username"]);
   }
 
-  const res = await retryer(fetcher, { login: username });
+  // Try viewer query first to include private repos when PAT owner matches username.
+  let res;
+  let usedViewer = false;
+  try {
+    const viewerRes = await retryer(viewerFetcher, {});
+    if (
+      !viewerRes.data.errors &&
+      viewerRes.data.data?.viewer?.login?.toLowerCase() ===
+        username.toLowerCase()
+    ) {
+      res = viewerRes;
+      usedViewer = true;
+    }
+  } catch {
+    // viewer query failed, fall through to user query
+  }
+
+  if (!usedViewer) {
+    res = await retryer(fetcher, { login: username });
+  }
 
   if (res.data.errors) {
     logger.error(res.data.errors);
@@ -91,7 +148,10 @@ const fetchTopLanguages = async (
     );
   }
 
-  let repoNodes = res.data.data.user.repositories.nodes;
+  const repoData = usedViewer
+    ? res.data.data.viewer.repositories.nodes
+    : res.data.data.user.repositories.nodes;
+  let repoNodes = repoData;
   /** @type {Record<string, boolean>} */
   let repoToHide = {};
   const allExcludedRepos = [...exclude_repo, ...excludeRepositories];
