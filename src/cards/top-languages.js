@@ -166,8 +166,9 @@ const calculatePixelLayoutHeight = (totalLangs, gridRows) => {
   const gap = 3;
   const gridHeight = gridRows * (pixelSize + gap) - gap;
   const gridToLegendGap = 20;
-  // Match pie/donut-vertical: 80px accounts for card title, body offset, and bottom padding
-  return gridHeight + gridToLegendGap + Math.round(totalLangs / 2) * 25 + 80;
+  const legendHeight = Math.ceil(totalLangs / 2) * 25;
+  // 155px accounts for card body offset (55px) and bottom padding (100px)
+  return gridHeight + gridToLegendGap + legendHeight + 155;
 };
 
 /**
