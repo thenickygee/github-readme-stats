@@ -24,6 +24,7 @@ const COMPACT_LAYOUT_DEFAULT_LANGS_COUNT = 6;
 const DONUT_LAYOUT_DEFAULT_LANGS_COUNT = 5;
 const PIE_LAYOUT_DEFAULT_LANGS_COUNT = 6;
 const DONUT_VERTICAL_LAYOUT_DEFAULT_LANGS_COUNT = 6;
+const PIXEL_LAYOUT_DEFAULT_LANGS_COUNT = 8;
 
 /**
  * @typedef {import("../fetchers/types").Lang} Lang
@@ -151,6 +152,21 @@ const calculateDonutVerticalLayoutHeight = (totalLangs) => {
  */
 const calculatePieLayoutHeight = (totalLangs) => {
   return 300 + Math.round(totalLangs / 2) * 25;
+};
+
+/**
+ * Calculates height for the pixel layout.
+ *
+ * @param {number} totalLangs Total number of languages.
+ * @param {number} gridRows Number of rows in the pixel grid.
+ * @returns {number} Card height.
+ */
+const calculatePixelLayoutHeight = (totalLangs, gridRows) => {
+  const pixelSize = 16;
+  const gap = 3;
+  const gridHeight = gridRows * (pixelSize + gap) - gap;
+  const legendHeight = Math.round(totalLangs / 2) * 25;
+  return gridHeight + legendHeight + 60;
 };
 
 /**
@@ -626,6 +642,98 @@ const renderPieLayout = (langs, totalLanguageSize, statsFormat) => {
 };
 
 /**
+ * Renders pixel art blocks layout to display user's most frequently used
+ * programming languages as a grid of colored squares.
+ *
+ * @param {Lang[]} langs Array of programming languages.
+ * @param {number} width Card width.
+ * @param {number} totalLanguageSize Total size of all languages.
+ * @param {string} statsFormat Stats format.
+ * @returns {{ layout: string, gridRows: number }} Pixel layout SVG and row count.
+ */
+const renderPixelLayout = (langs, width, totalLanguageSize, statsFormat) => {
+  const pixelSize = 16;
+  const gap = 3;
+  const gridPadding = CARD_PADDING;
+  const gridWidth = width - gridPadding * 2;
+  const cols = Math.floor((gridWidth + gap) / (pixelSize + gap));
+  const totalPixels = cols * Math.max(Math.ceil(langs.length * 1.5), 6);
+
+  // Assign pixel counts proportionally, minimum 1 per language
+  let pixelCounts = langs.map((lang) => {
+    const proportion = lang.size / totalLanguageSize;
+    return Math.max(1, Math.round(proportion * totalPixels));
+  });
+
+  // Adjust total to fit exactly
+  let assigned = pixelCounts.reduce((a, b) => a + b, 0);
+  while (assigned > totalPixels) {
+    const maxIdx = pixelCounts.indexOf(Math.max(...pixelCounts));
+    pixelCounts[maxIdx]--;
+    assigned--;
+  }
+  while (assigned < totalPixels) {
+    const maxIdx = pixelCounts.indexOf(Math.max(...pixelCounts));
+    pixelCounts[maxIdx]++;
+    assigned++;
+  }
+
+  // Build flat array of colored pixels
+  const pixels = [];
+  langs.forEach((lang, i) => {
+    for (let j = 0; j < pixelCounts[i]; j++) {
+      pixels.push(lang.color || DEFAULT_LANG_COLOR);
+    }
+  });
+
+  // Lay out pixels in a grid
+  const rows = Math.ceil(pixels.length / cols);
+  let delayIndex = 0;
+  const rects = pixels
+    .map((color, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = gridPadding + col * (pixelSize + gap);
+      const y = row * (pixelSize + gap);
+      const staggerDelay = (delayIndex + 3) * 20;
+      delayIndex++;
+      return `<rect
+        class="stagger"
+        style="animation-delay: ${staggerDelay}ms"
+        data-testid="lang-pixel"
+        x="${x}" y="${y}"
+        width="${pixelSize}" height="${pixelSize}"
+        fill="${color}"
+        rx="2" ry="2"
+        shape-rendering="crispEdges"
+      />`;
+    })
+    .join("\n");
+
+  const gridHeight = rows * (pixelSize + gap) - gap;
+
+  const layout = `
+    <svg data-testid="lang-items">
+      <g transform="translate(0, 0)">
+        ${rects}
+      </g>
+      <g transform="translate(0, ${gridHeight + 20})">
+        <svg data-testid="lang-names" x="${CARD_PADDING}">
+          ${createLanguageTextNode({
+            langs,
+            totalSize: totalLanguageSize,
+            hideProgress: false,
+            statsFormat,
+          })}
+        </svg>
+      </g>
+    </svg>
+  `;
+
+  return { layout, gridRows: rows };
+};
+
+/**
  * Creates the SVG paths for the language donut chart.
  *
  * @param {number} cx Donut center x-position.
@@ -741,7 +849,9 @@ const renderDonutLayout = (langs, width, totalLanguageSize, statsFormat) => {
 const noLanguagesDataNode = ({ color, text, layout }) => {
   return `
     <text x="${
-      layout === "pie" || layout === "donut-vertical" ? CARD_PADDING : 0
+      layout === "pie" || layout === "donut-vertical" || layout === "pixel"
+        ? CARD_PADDING
+        : 0
     }" y="11" class="stat bold" fill="${color}">${text}</text>
   `;
 };
@@ -763,6 +873,8 @@ const getDefaultLanguagesCountByLayout = ({ layout, hide_progress }) => {
     return DONUT_VERTICAL_LAYOUT_DEFAULT_LANGS_COUNT;
   } else if (layout === "pie") {
     return PIE_LAYOUT_DEFAULT_LANGS_COUNT;
+  } else if (layout === "pixel") {
+    return PIXEL_LAYOUT_DEFAULT_LANGS_COUNT;
   } else {
     return NORMAL_LAYOUT_DEFAULT_LANGS_COUNT;
   }
@@ -840,6 +952,15 @@ const renderTopLanguages = (topLangs, options = {}) => {
   } else if (layout === "pie") {
     height = calculatePieLayoutHeight(langs.length);
     finalLayout = renderPieLayout(langs, totalLanguageSize, stats_format);
+  } else if (layout === "pixel") {
+    const pixelResult = renderPixelLayout(
+      langs,
+      width,
+      totalLanguageSize,
+      stats_format,
+    );
+    finalLayout = pixelResult.layout;
+    height = calculatePixelLayoutHeight(langs.length, pixelResult.gridRows);
   } else if (layout === "donut-vertical") {
     height = calculateDonutVerticalLayoutHeight(langs.length);
     finalLayout = renderDonutVerticalLayout(
@@ -934,7 +1055,7 @@ const renderTopLanguages = (topLangs, options = {}) => {
     `,
   );
 
-  if (layout === "pie" || layout === "donut-vertical") {
+  if (layout === "pie" || layout === "donut-vertical" || layout === "pixel") {
     return card.render(finalLayout);
   }
 
@@ -957,6 +1078,7 @@ export {
   calculateDonutLayoutHeight,
   calculateDonutVerticalLayoutHeight,
   calculatePieLayoutHeight,
+  calculatePixelLayoutHeight,
   donutCenterTranslation,
   trimTopLanguages,
   renderTopLanguages,
