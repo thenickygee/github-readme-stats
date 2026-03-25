@@ -166,7 +166,7 @@ const calculatePixelLayoutHeight = (totalLangs, gridRows) => {
   const gap = 3;
   const gridHeight = gridRows * (pixelSize + gap) - gap;
   const legendHeight = Math.round(totalLangs / 2) * 25;
-  return gridHeight + legendHeight + 60;
+  return gridHeight + legendHeight + 85;
 };
 
 /**
